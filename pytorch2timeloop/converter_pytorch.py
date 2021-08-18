@@ -15,6 +15,7 @@ from collections import OrderedDict
 import numpy as np
 
 from pytorch2timeloop.utils.construct_workloads import *
+from transformers import BertTokenizer, BertForMaskedLM, BertModel
 
 """ 
 This section of code is taken directly from the github repo https://github.com/sksq96/pytorch-summary
@@ -29,6 +30,12 @@ def make_summary(model, input_size, convert_fc=False, batch_size=-1, \
     # (inference graph can differ from training graph when there are some modules not used during inference)
     # (e.g., auxiliary classifier in Inception v3)
     model.eval()
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    model = BertModel.from_pretrained('bert-base-uncased')
+    text = "The capital of France, " + tokenizer.mask_token + ", contains the Eiffel Tower."
+    input = tokenizer.encode_plus(text, return_tensors = "pt")
+    mask_index = torch.where(input["input_ids"][0] == tokenizer.mask_token_id)
+
     
     if dtypes == None:
         dtypes = [torch.FloatTensor]*len(input_size)
@@ -86,7 +93,8 @@ def make_summary(model, input_size, convert_fc=False, batch_size=-1, \
 
     # make a forward pass
     # print(x.shape)
-    model(*x)
+    model(**input)
+    # model(*x)
 
     # remove these hooks
     for h in hooks:
