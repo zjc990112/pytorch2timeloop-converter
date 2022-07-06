@@ -16,7 +16,38 @@ import numpy as np
 
 from pytorch2timeloop.utils.construct_workloads import *
 from transformers import BertTokenizer, BertForMaskedLM, BertModel
+from transformers import pytorch_utils
 
+from transformers import GPT2Tokenizer, GPT2Model
+
+import io
+import requests
+import PIL
+
+import torch
+import torchvision.transforms as T
+import torch.nn.functional as F
+import torchvision.transforms.functional as TF
+from dall_e import map_pixels, unmap_pixels, load_model, utils
+
+target_image_size = 256
+model_name = "gpt-2"
+# model_name = "Bert"
+model_name = "dall-e"
+
+def preprocess(img):
+    s = min(img.size)
+    
+    if s < target_image_size:
+        raise ValueError(f'min dim for image {s} < {target_image_size}')
+        
+    r = target_image_size / s
+    s = (round(r * img.size[1]), round(r * img.size[0]))
+    img = TF.resize(img, s, interpolation=PIL.Image.LANCZOS)
+    img = TF.center_crop(img, output_size=2 * [target_image_size])
+    img = torch.unsqueeze(T.ToTensor()(img), 0)
+    return map_pixels(img)
+# 
 """ 
 This section of code is taken directly from the github repo https://github.com/sksq96/pytorch-summary
 and modified to fit our specific needs.  The code performs a forward pass through the model with hooks
@@ -29,13 +60,17 @@ def make_summary(model, input_size, convert_fc=False, batch_size=-1, \
     # Set the model to evaluation mode
     # (inference graph can differ from training graph when there are some modules not used during inference)
     # (e.g., auxiliary classifier in Inception v3)
-    model.eval()
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    model = BertModel.from_pretrained('bert-base-uncased')
-    text = "The capital of France, " + tokenizer.mask_token + ", contains the Eiffel Tower."
-    input = tokenizer.encode_plus(text, return_tensors = "pt")
-    mask_index = torch.where(input["input_ids"][0] == tokenizer.mask_token_id)
 
+    if model_name == "Bert":
+        tokenizer = BertTokenizer.from_pretrained('./bert-base-uncased/vocab.txt')
+        text = "The capital of France, " + tokenizer.mask_token + ", contains the Eiffel Tower."
+        input = tokenizer.encode_plus(text, return_tensors = "pt")
+        mask_index = torch.where(input["input_ids"][0] == tokenizer.mask_token_id)
+    elif model_name == "dall-e":
+        input = preprocess(PIL.Image.open("./1000x-1.jpg"))
+    elif model_name == "gpt-2":
+        tokenizer = GPT2Tokenizer.from_pretrained("./gpt2")
+        input = tokenizer("Hello, my dog is cute", return_tensors="pt")
     
     if dtypes == None:
         dtypes = [torch.FloatTensor]*len(input_size)
@@ -72,9 +107,10 @@ def make_summary(model, input_size, convert_fc=False, batch_size=-1, \
         if (
             # not isinstance(module, nn.Sequential)
             # and not isinstance(module, nn.ModuleList)
-            isinstance(module, nn.Conv2d) or (isinstance(module, nn.Linear) and convert_fc)
+            isinstance(module, nn.Conv2d) or (isinstance(module, nn.Linear) and convert_fc) or (isinstance(module, utils.Conv2d)) or (isinstance(module, pytorch_utils.Conv1D) and convert_fc)
         ):
             hooks.append(module.register_forward_hook(hook))
+        # hooks.append(module.register_forward_hook(hook))
 
     # multiple inputs to the network
     if isinstance(input_size, tuple):
@@ -93,8 +129,11 @@ def make_summary(model, input_size, convert_fc=False, batch_size=-1, \
 
     # make a forward pass
     # print(x.shape)
-    model(**input)
-    # model(*x)
+    if model_name == "dall-e":
+        model(input)
+    else:
+        model(**input)
+    # model(input)
 
     # remove these hooks
     for h in hooks:
@@ -198,6 +237,8 @@ def extract_layer_data(model, input_size, convert_fc=False, exception_module_nam
                     conv_list.append(layer)
             else:
                 conv_list.append(layer)
+        elif isinstance(layer, utils.Conv2d) or (convert_fc and isinstance(layer, pytorch_utils.Conv1D)):
+            conv_list.append(layer)
             
     for conv in conv_list:
 
@@ -251,6 +292,30 @@ def extract_layer_data(model, input_size, convert_fc=False, exception_module_nam
             data[layer_number]['groups'] = 1
             data[layer_number]['mode'] = 'linear'
 
+        elif isinstance(conv, utils.Conv2d):
+            data[layer_number]['in_channels'] = conv.n_in
+            data[layer_number]['out_channels'] = conv.n_out
+            data[layer_number]['kernel_width'] = conv.kw
+            data[layer_number]['kernel_height'] = conv.kw
+            data[layer_number]['stride_width'] = 1
+            data[layer_number]['stride_height'] = 1 
+            data[layer_number]['padding_width'] =  0
+            data[layer_number]['padding_height'] = 0
+            data[layer_number]['groups'] = 0
+            data[layer_number]['mode'] = 'norm-conv'
+
+        elif isinstance(conv, pytorch_utils.Conv1D):
+            data[layer_number]['in_channels'] = conv.weight.size()[0]
+            data[layer_number]['out_channels'] = conv.nf
+            data[layer_number]['kernel_width'] = 1
+            data[layer_number]['kernel_height'] = 1
+            data[layer_number]['stride_width'] = 1
+            data[layer_number]['stride_height'] = 1
+            data[layer_number]['padding_width'] = 0
+            data[layer_number]['padding_height'] = 0
+            data[layer_number]['groups'] = 1
+            data[layer_number]['mode'] = 'linear'
+
         layer_number += 1
         
     layer_number = 1
@@ -266,8 +331,3 @@ def extract_layer_data(model, input_size, convert_fc=False, exception_module_nam
             layer_number += 1
    
     return data
-
-
-
-
-

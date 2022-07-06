@@ -66,3 +66,8 @@ tmp.mp4
 # Others
 test.py
 workloads/
+model/
+encoder.pkl
+bert-base-uncased/
+gpt2/
+1000x-1.jpg

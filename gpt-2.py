@@ -1,15 +1,15 @@
-import torchvision.models as models
+import torch
+from transformers import GPT2Tokenizer, GPT2Model
 import pytorch2timeloop
-from transformers import BertTokenizer, BertModel, BertForMaskedLM
 
-net = BertModel.from_pretrained('./bert-base-uncased')
+net = GPT2Model.from_pretrained("./gpt2")
 
 input_shape = (1,1)
 
 batch_size = 1
 
 top_dir = 'workloads'
-sub_dir = 'bert'
+sub_dir = 'gpt2'
  
 convert_fc = True
 
