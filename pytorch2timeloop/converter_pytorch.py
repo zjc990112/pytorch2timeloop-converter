@@ -31,9 +31,11 @@ import torchvision.transforms.functional as TF
 from dall_e import map_pixels, unmap_pixels, load_model, utils
 
 target_image_size = 256
-model_name = "gpt-2"
+# model_name = "gpt-2"
+# model_name = "gpt-2-xl"
 # model_name = "Bert"
-model_name = "dall-e"
+# model_name = "dall-e"
+model_name = "dall-e-dec"
 
 def preprocess(img):
     s = min(img.size)
@@ -68,8 +70,18 @@ def make_summary(model, input_size, convert_fc=False, batch_size=-1, \
         mask_index = torch.where(input["input_ids"][0] == tokenizer.mask_token_id)
     elif model_name == "dall-e":
         input = preprocess(PIL.Image.open("./1000x-1.jpg"))
+    elif model_name == "dall-e-dec":
+        enc = load_model("./encoder.pkl")
+        x = preprocess(PIL.Image.open("./1000x-1.jpg"))
+        z_logits = enc(x)
+        z = torch.argmax(z_logits, axis=1)
+        z = F.one_hot(z, num_classes=enc.vocab_size).permute(0, 3, 1, 2).float()
+        input = z
     elif model_name == "gpt-2":
         tokenizer = GPT2Tokenizer.from_pretrained("./gpt2")
+        input = tokenizer("Hello, my dog is cute", return_tensors="pt")
+    elif model_name == "gpt-2-xl":
+        tokenizer = GPT2Tokenizer.from_pretrained("./gpt2-xl")
         input = tokenizer("Hello, my dog is cute", return_tensors="pt")
     
     if dtypes == None:
@@ -129,7 +141,7 @@ def make_summary(model, input_size, convert_fc=False, batch_size=-1, \
 
     # make a forward pass
     # print(x.shape)
-    if model_name == "dall-e":
+    if model_name == "dall-e" or model_name == "dall-e-dec":
         model(input)
     else:
         model(**input)
@@ -200,7 +212,7 @@ def convert_model(model, input_size, batch_size, model_name, save_dir, convert_f
     for i in range(0, len(layer_list)):
         problem = layer_list[i]
         layer_type = problem[0]
-        file_name = model_name + '_' + 'layer' + str(i+1) + '.yaml'
+        file_name = model_name + '_' + 'layer' + str(i+38) + '.yaml'
         file_path = os.path.abspath(os.path.join(save_dir, model_name, file_name))
         if layer_type == 'norm-conv' or layer_type == 'linear':
             rewrite_workload_bounds(file_path, problem)
@@ -321,8 +333,8 @@ def extract_layer_data(model, input_size, convert_fc=False, exception_module_nam
     layer_number = 1
     summary = make_summary(model, input_size, convert_fc)
 
-    assert len(data.keys()) == len([layer for layer in summary if ("Conv2d" in layer or ("Linear" in layer and convert_fc))]), \
-            "Different number of conv layers detected by filter and io"
+    # assert len(data.keys()) == len([layer for layer in summary if ("Conv2d" in layer or ("Linear" in layer and convert_fc))]), \
+    #         "Different number of conv layers detected by filter and io"
     
     for layer in summary:
         if "Conv2d" in layer or ("Linear" in layer and convert_fc):

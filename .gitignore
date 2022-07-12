@@ -71,3 +71,5 @@ encoder.pkl
 bert-base-uncased/
 gpt2/
 1000x-1.jpg
+gpt2-xl/
+decoder.pkl

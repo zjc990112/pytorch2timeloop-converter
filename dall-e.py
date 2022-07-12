@@ -1,7 +1,10 @@
 import pytorch2timeloop
 from dall_e import map_pixels, unmap_pixels, load_model, utils
 
-net = load_model("./encoder.pkl")
+# net = load_model("./encoder.pkl")
+net = load_model("./decoder.pkl")
+for name,module in net.named_modules():
+    print(module.__class__)
 
 input_shape = (1,1)
 
